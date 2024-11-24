@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# Shell script to deploy web folder to server locally
+# Usage:
+#   deploy_loc [OPTION] [dir|path] file(s)
+# ---------------------------------------
+# parser ->loop
+# loop -> check_type, copy
+# copy -> check_dir, error_handler in trap
+# check_dir -> error_handler
+
+error_handler() { # Accepts: $? $LINENO
+    echo -e "$1\nExiting..."
+    exit 1
+}
+
+#trap error_handler "Error: Something else went wrong" ERR
+
+dir="/var/www"
+start=0
+val=0
+file_type=0
+dir_check=0
+
+check_type () { # Accepts: $1 - file or directory to check
+    # Checks if $1 is a file, echo messages and set $file_type to zero
+    # Else if $1 is a directory, echo messages and set $file_type to one
+    # Else echo Error message and set $file_type to two
+    #
+    if [ -f $1 ]; then
+        echo $1 is a file
+        echo "$1 : check...ok"
+        file_type=0
+    elif [ -d $1 ]; then
+        echo $1 is a directory
+        echo "$1 : check...ok"
+        file_type=1
+    else
+        file_type=2
+        echo "Error: $1 does not seem to exist in the current directory"
+        return
+    fi
+}
+
+check_dir () { # Accepts: $1 - directory to check
+    # Tests if $1 is a directory
+    # Runs error_handler if directory does not exist
+    #
+    if [ -d $1 ]; then
+        echo "$1 : check...ok"
+    else 
+        error_handler "$1 is not a valid directory"
+    fi
+}
+
+copy () { # Accepts: $file $dir ["-r"]
+    # Runs check_dir on $2 to validate that the directory exists
+    # If directory exists, copy $file to $dir
+    # if error, trap error, run error_handler and retry with sudo
+    # if error with sudo, trap error, run error_handler
+    #   
+    check_dir $2
+    echo -e "copying $1 to $2"...
+    trap 'error_handler "Error copying fle: Retrying with sudo...";' ERR
+    cp $3 $1 $2
+    trap 'error_handler "Error copying with sudo...\n\
+    Terminating with error $? on line $LINENO"' ERR
+    sudo cp $3 $1 $2
+    echo -e "...done"
+}
+
+loop () { # Accepts: $@
+    # --- Loops through the argurments in $@
+    # using $val to determine the start position
+    # If the argument is a file, run copy
+    # else if the  argumment is a directory, 
+    #   run copy with -r option to copy recursively
+    #
+    for file in $@; do
+        if [ $start -ge $val ]; then
+           check_type $file
+           if [ $file_type -eq 0 ]; then
+                copy $file $dir
+
+            elif [ $file_type -eq 1 ]; then
+                copy $file $dir "-r"
+            fi
+        fi
+        start=$((start + 1))
+        #sudo cp $file $dir
+    done
+}
+
+
+parser () { # Accepts: $@
+    # --- Parse arguments in #@
+    # if $# is greater than 0
+    #   If $1 equals to -d,
+    #       if $# is less than 3, display Usage
+    #       else change $dir to $2, set $val to 2 and run loop
+    #   If $1 equals to -p,
+    #       if $# is less than 3, display Usage
+    #       else append $2 to $dir, set $val to 2 and run loop
+    #   else run loop
+    # else display Usage
+    #
+    if [ $# -gt 0 ]; then
+        # --- Option "-d" : changes path to paste files to the
+        #          given directory
+        if [ $1 == '-d' ]; then
+            if [ $# -lt 3 ]; then
+                echo "Usage: deploy_loc [OPTION] [dir|path] file(s)"
+            else
+                dir=$2
+                val=2
+                loop $@ # --ACTION
+            fi
+        # --- Option "-p" : accept additonal path to paste files
+        #          within the original directory in variable dir
+        elif [ $1 == '-p' ]; then
+            if [ $# -lt 3 ]; then
+                echo "Usage: deploy_loc [OPTION] [dir|path]"
+            else
+                dir=$dir/$2
+                val=2
+                loop $@ # --ACTION
+            fi
+        # --- Pass arguments to funtion loop if no option is used ---
+        else
+            loop $@ # --ACTION
+        fi
+    # --- Display Usage if number of arguments is zero ---
+    else 
+        echo "Usage: deploy_loc [OPTION] [dir|path]"
+
+    fi
+}
+
+parser $@
