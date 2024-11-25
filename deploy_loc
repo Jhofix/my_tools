@@ -3,7 +3,7 @@
 # Usage:
 #   deploy_loc [OPTION] [dir|path] file(s)
 # ---------------------------------------
-# parser ->loop
+# parser ->loop, set_dir
 # loop -> check_type, copy
 # copy -> check_dir, error_handler in trap
 # check_dir -> error_handler
@@ -15,7 +15,7 @@ error_handler() { # Accepts: $? $LINENO
 
 #trap error_handler "Error: Something else went wrong" ERR
 
-dir="/var/www"
+dir=/var/www
 start=0
 val=0
 file_type=0
@@ -66,6 +66,21 @@ copy () { # Accepts: $file $dir ["-r"]
     Terminating with error $? on line $LINENO"' ERR
     sudo cp $3 $1 $2
     echo -e "...done"
+}
+
+set_dir () { # Accepts: $2 from parser
+    # Sets $dir to $1 using sed
+    # If error, retries using sudo priviledge
+    # Runs error_handler if sudo fails
+    #
+    sed -i "s|^dir=.*|dir=$1|" $0
+    if [ $? -eq 1 ]; then
+        echo "Error: Unable to set default directory"
+        echo "retrying with sudo priviledge..."
+        trap 'error_handler "Error: faied to set default directory"' ERR
+        sudo sed "s|^dir=.*|dir=$1|" $0
+    fi
+    echo "...default directory set to $1 successfully"
 }
 
 loop () { # Accepts: $@
@@ -123,6 +138,17 @@ parser () { # Accepts: $@
                 dir=$dir/$2
                 val=2
                 loop $@ # --ACTION
+            fi
+        # --- Option "-s" : accept additonal path to reset $dir to
+        #          a another default directory
+        elif [ $1 == '-s' ]; then
+            if [ $# -lt 2 ]; then
+                echo "Usage: deploy_loc [OPTION] [dir|path]"
+            elif [ $# -gt 2 ]; then
+                echo -e "Error: Too much arguments for option s\n-s takes only one argument"
+            else
+                echo $0 # --ACTION
+                set_dir $2
             fi
         # --- Pass arguments to funtion loop if no option is used ---
         else
